@@ -5,6 +5,8 @@ import type { Deployment } from '../../types';
 
 export interface DeploymentBadgeProps {
   deployment: Deployment;
+  /** Optional override colour. Falls back to tool's signature colour. */
+  color?: string;
   onClick?: (deployment: Deployment) => void;
   onContextMenu?: (deployment: Deployment, e: React.MouseEvent) => void;
   dim?: boolean;
@@ -14,13 +16,14 @@ export interface DeploymentBadgeProps {
 
 export function DeploymentBadge({
   deployment,
+  color,
   onClick,
   onContextMenu,
   dim,
   size = 'sm',
   showEnv = false,
 }: DeploymentBadgeProps) {
-  const team = TEAMS[deployment.team];
+  const tint = color ?? TEAMS[deployment.team].color;
   const isFailed = deployment.status === 'Failed';
   const isCancelled = deployment.status === 'Cancelled';
 
@@ -45,9 +48,9 @@ export function DeploymentBadge({
         isCancelled && 'line-through opacity-60',
       )}
       style={{
-        backgroundColor: `${team.color}26`,
-        color: team.color,
-        boxShadow: `inset 0 0 0 1px ${team.color}66`,
+        backgroundColor: `${tint}26`,
+        color: tint,
+        boxShadow: `inset 0 0 0 1px ${tint}66`,
       }}
       title={`${deployment.title} — ${deployment.owner} (${deployment.environment})`}
     >
@@ -56,7 +59,7 @@ export function DeploymentBadge({
           'h-1.5 w-1.5 flex-shrink-0 rounded-full',
           isFailed && 'animate-pulse-soft',
         )}
-        style={{ backgroundColor: team.color }}
+        style={{ backgroundColor: tint }}
       />
       <span className="truncate">{deployment.title}</span>
       {showEnv && (

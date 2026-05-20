@@ -2,6 +2,8 @@ import { AnimatePresence } from 'framer-motion';
 import { addMonths, format, parseISO } from 'date-fns';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { ChatWidget } from './components/ai/ChatWidget';
+import { InsightsPanel } from './components/ai/InsightsPanel';
 import { CalendarView } from './components/calendar/CalendarView';
 import { DeploymentDetail } from './components/deployments/DeploymentDetail';
 import { DeploymentList } from './components/deployments/DeploymentList';
@@ -19,7 +21,7 @@ import { Skeleton } from './components/ui/Skeleton';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { isSupabaseConfigured } from './lib/supabase';
-import { isDateFrozen } from './lib/utils';
+import { deploymentContainsDate, isDateFrozen } from './lib/utils';
 import type { Deployment, DeploymentStatus } from './types';
 
 const ONBOARDING_KEY = 'mdi-cal-onboarded-v1';
@@ -49,6 +51,7 @@ function ShellInner() {
   );
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const [detail, setDetail] = useState<Deployment | null>(null);
   const [quickMenu, setQuickMenu] = useState<
     { deployment: Deployment; x: number; y: number } | null
@@ -80,6 +83,7 @@ function ShellInner() {
       closeAll: () => {
         setShortcutsOpen(false);
         setTourOpen(false);
+        setInsightsOpen(false);
         setQuickMenu(null);
         if (detail) setDetail(null);
         else if (isDeploymentModalOpen) closeDeploymentModal();
@@ -104,8 +108,12 @@ function ShellInner() {
   const selectedDayDeployments = useMemo(() => {
     if (!selectedDate) return [];
     return deployments.deployments
-      .filter((d) => d.deploy_date === selectedDate)
-      .sort((a, b) => (a.deploy_time_start ?? '99:99').localeCompare(b.deploy_time_start ?? '99:99'));
+      .filter((d) => deploymentContainsDate(d, selectedDate))
+      .sort((a, b) => {
+        const startCmp = a.deploy_date.localeCompare(b.deploy_date);
+        if (startCmp !== 0) return startCmp;
+        return (a.deploy_time_start ?? '99:99').localeCompare(b.deploy_time_start ?? '99:99');
+      });
   }, [selectedDate, deployments.deployments]);
 
   const selectedDayFreeze = useMemo(
@@ -123,6 +131,7 @@ function ShellInner() {
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
         onOpenTour={() => setTourOpen(true)}
+        onOpenInsights={() => setInsightsOpen(true)}
         isDemo={!isSupabaseConfigured}
         searchInputRef={searchInputRef}
       />
@@ -210,6 +219,10 @@ function ShellInner() {
       />
 
       <OnboardingTour isOpen={tourOpen} onClose={handleCloseTour} />
+
+      <InsightsPanel isOpen={insightsOpen} onClose={() => setInsightsOpen(false)} />
+
+      <ChatWidget />
 
       <AnimatePresence>
         {quickMenu && (

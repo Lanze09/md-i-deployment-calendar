@@ -2,8 +2,11 @@ import { format, parseISO } from 'date-fns';
 import { AlertTriangle, Clock, FileText, RotateCcw, ShieldAlert, User } from 'lucide-react';
 import { TEAMS } from '../../constants/teams';
 import { RISK_COLORS, STATUS_COLORS } from '../../constants/environments';
-import { cx, deploymentConflicts, deploymentIsFrozen } from '../../lib/utils';
+import { useApp } from '../../context/AppContext';
+import { cx, deploymentConflicts, deploymentIsFrozen, deploymentSpanDays, effectiveColor } from '../../lib/utils';
 import type { Deployment, FreezePeriod } from '../../types';
+import { ConflictExplainer } from '../ai/ConflictExplainer';
+import { DeploymentAISummary } from '../ai/DeploymentAISummary';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -25,8 +28,10 @@ export function DeploymentDetail({
   onEdit,
   onDelete,
 }: DeploymentDetailProps) {
+  const { selectedTool } = useApp();
   if (!deployment) return null;
   const team = TEAMS[deployment.team];
+  const tint = effectiveColor(deployment, selectedTool);
   const conflicts = deploymentConflicts(deployment, allDeployments);
   const frozen = deploymentIsFrozen(deployment, freezePeriods);
 
@@ -36,8 +41,8 @@ export function DeploymentDetail({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge color={team.color}>
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: team.color }} />
+              <Badge color={tint}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tint }} />
                 {team.label}
               </Badge>
               <Badge color={STATUS_COLORS[deployment.status]}>{deployment.status}</Badge>
@@ -53,12 +58,21 @@ export function DeploymentDetail({
           </div>
         </div>
 
+        <DeploymentAISummary
+          deployment={deployment}
+          allDeployments={allDeployments}
+          freezePeriods={freezePeriods}
+        />
+
         {conflicts.length > 0 && (
           <div className="flex items-start gap-2 rounded-card border border-status-danger/40 bg-status-danger/10 px-3 py-2.5 text-sm">
             <AlertTriangle size={16} className="mt-0.5 text-status-danger" />
             <div>
               <div className="font-medium text-status-danger">
-                Conflict on {deployment.environment} for {format(parseISO(deployment.deploy_date), 'MMM d')}
+                Cross-team overlap on {deployment.environment} ({format(parseISO(deployment.deploy_date), 'MMM d')}
+                {deployment.deploy_date !== deployment.deploy_end_date
+                  ? ` – ${format(parseISO(deployment.deploy_end_date), 'MMM d')}`
+                  : ''})
               </div>
               <ul className="mt-1 space-y-0.5 text-slate-700 dark:text-slate-300">
                 {conflicts.map((c) => (
@@ -70,6 +84,11 @@ export function DeploymentDetail({
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 Consider staggering deployments to avoid environment contention.
               </p>
+              <ConflictExplainer
+                deployment={deployment}
+                conflicts={conflicts}
+                freezePeriods={freezePeriods}
+              />
             </div>
           </div>
         )}
@@ -86,7 +105,18 @@ export function DeploymentDetail({
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <InfoRow icon={<Clock size={14} />} label="When">
-            {format(parseISO(deployment.deploy_date), 'EEEE, MMMM d, yyyy')}
+            {deployment.deploy_date === deployment.deploy_end_date ? (
+              <>{format(parseISO(deployment.deploy_date), 'EEEE, MMMM d, yyyy')}</>
+            ) : (
+              <>
+                {format(parseISO(deployment.deploy_date), 'EEE, MMM d')}{' '}
+                <span className="text-slate-400">→</span>{' '}
+                {format(parseISO(deployment.deploy_end_date), 'EEE, MMM d, yyyy')}
+                <span className="ml-2 text-xs text-slate-500">
+                  ({deploymentSpanDays(deployment)} days)
+                </span>
+              </>
+            )}
             {deployment.deploy_time_start && (
               <> · {deployment.deploy_time_start}
                 {deployment.deploy_time_end ? `–${deployment.deploy_time_end}` : ''}

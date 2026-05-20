@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { isSameMonth, parseISO } from 'date-fns';
+import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { AlertTriangle, Clock4 } from 'lucide-react';
 import { TEAMS } from '../../constants/teams';
 import { STATUS_COLORS } from '../../constants/environments';
@@ -19,14 +19,15 @@ export function StatsBar() {
   const { deployments, filters, currentDate } = app;
 
   const filtered = useMemo(
-    () => applyFilters(deployments.deployments, filters),
-    [deployments.deployments, filters],
+    () => applyFilters(deployments.deployments, filters, app.selectedTool),
+    [deployments.deployments, filters, app.selectedTool],
   );
 
-  const monthDeployments = useMemo(
-    () => filtered.filter((d) => isSameMonth(parseISO(d.deploy_date), currentDate)),
-    [filtered, currentDate],
-  );
+  const monthDeployments = useMemo(() => {
+    const ms = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+    const me = format(endOfMonth(currentDate), 'yyyy-MM-dd');
+    return filtered.filter((d) => d.deploy_date <= me && d.deploy_end_date >= ms);
+  }, [filtered, currentDate]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<DeploymentStatus, number> = {
@@ -42,7 +43,11 @@ export function StatsBar() {
   }, [monthDeployments]);
 
   const conflictCount = useMemo(
-    () => detectConflicts(filtered).filter((c) => isSameMonth(parseISO(c.date), currentDate)).length,
+    () => {
+      const ms = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+      const me = format(endOfMonth(currentDate), 'yyyy-MM-dd');
+      return detectConflicts(filtered).filter((c) => c.date >= ms && c.date <= me).length;
+    },
     [filtered, currentDate],
   );
 

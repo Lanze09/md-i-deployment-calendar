@@ -10,12 +10,30 @@ import { useDeployments, type UseDeploymentsResult } from '../hooks/useDeploymen
 import { useFilters } from '../hooks/useFilters';
 import { useFreezePeriods, type UseFreezePeriodsResult } from '../hooks/useFreezePeriods';
 import { useTheme } from '../hooks/useTheme';
+import { TEAM_KEYS } from '../constants/teams';
 import type {
   Deployment,
   FilterState,
   ToastMessage,
+  ToolSelection,
   ViewMode,
 } from '../types';
+
+const TOOL_KEY = 'mdi-cal-tool';
+
+function readSelectedTool(): ToolSelection {
+  if (typeof window === 'undefined') return 'all';
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = params.get('tool');
+  if (fromUrl === 'all' || (fromUrl && (TEAM_KEYS as readonly string[]).includes(fromUrl))) {
+    return fromUrl as ToolSelection;
+  }
+  const saved = window.localStorage.getItem(TOOL_KEY);
+  if (saved === 'all' || (saved && (TEAM_KEYS as readonly string[]).includes(saved))) {
+    return saved as ToolSelection;
+  }
+  return 'all';
+}
 
 export interface AppContextValue {
   deployments: UseDeploymentsResult;
@@ -28,6 +46,8 @@ export interface AppContextValue {
   theme: ReturnType<typeof useTheme>;
   view: ViewMode;
   setView: (v: ViewMode) => void;
+  selectedTool: ToolSelection;
+  setSelectedTool: (t: ToolSelection) => void;
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
   selectedDate: string | null;
@@ -89,6 +109,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const freezePeriods = useFreezePeriods();
 
   const [view, setView] = useState<ViewMode>('calendar');
+  const [selectedTool, setSelectedToolRaw] = useState<ToolSelection>(readSelectedTool);
+
+  const setSelectedTool = useCallback(
+    (t: ToolSelection) => {
+      setSelectedToolRaw(t);
+      // Tool change invalidates any deployment-level filter (IDs belong to the previous tool).
+      setAll('enhancements', []);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(TOOL_KEY, t);
+        const params = new URLSearchParams(window.location.search);
+        if (t === 'all') params.delete('tool');
+        else params.set('tool', t);
+        const q = params.toString();
+        const url = `${window.location.pathname}${q ? `?${q}` : ''}${window.location.hash}`;
+        window.history.replaceState(null, '', url);
+      }
+    },
+    [setAll],
+  );
+
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [editingDeployment, setEditingDeployment] = useState<Deployment | null>(null);
@@ -125,6 +165,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       theme,
       view,
       setView,
+      selectedTool,
+      setSelectedTool,
       currentDate,
       setCurrentDate,
       selectedDate: selectedDate ?? pendingDate,
@@ -150,6 +192,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clearFilters,
       theme,
       view,
+      selectedTool,
+      setSelectedTool,
       currentDate,
       selectedDate,
       pendingDate,

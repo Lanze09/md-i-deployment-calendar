@@ -11,9 +11,11 @@ import {
   Plus,
   Search,
   Snowflake,
+  Sparkles,
   Sun,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { TEAMS, TEAM_KEYS } from '../../constants/teams';
 import {
   applyFilters,
   activeFilterCount,
@@ -21,13 +23,14 @@ import {
   defaultExportFilename,
   exportToCSV,
 } from '../../lib/utils';
-import type { ViewMode } from '../../types';
+import type { ToolSelection, ViewMode } from '../../types';
 import { Button } from '../ui/Button';
 
 export interface HeaderProps {
   onToggleSidebar: () => void;
   onOpenShortcuts: () => void;
   onOpenTour: () => void;
+  onOpenInsights: () => void;
   isDemo: boolean;
   searchInputRef: React.RefObject<HTMLInputElement>;
 }
@@ -42,11 +45,24 @@ export function Header({
   onToggleSidebar,
   onOpenShortcuts,
   onOpenTour,
+  onOpenInsights,
   isDemo,
   searchInputRef,
 }: HeaderProps) {
   const app = useApp();
-  const { view, setView, theme, openDeploymentModal, setSearch, filters, deployments, currentDate, setFreezeModalOpen } = app;
+  const {
+    view,
+    setView,
+    theme,
+    openDeploymentModal,
+    setSearch,
+    filters,
+    deployments,
+    currentDate,
+    setFreezeModalOpen,
+    selectedTool,
+    setSelectedTool,
+  } = app;
 
   const [searchValue, setSearchValue] = useState(filters.search);
   const debounceRef = useRef<number | null>(null);
@@ -62,11 +78,11 @@ export function Header({
   }, [searchValue, setSearch]);
 
   const handleExport = () => {
-    const visible = applyFilters(deployments.deployments, filters);
+    const visible = applyFilters(deployments.deployments, filters, selectedTool);
     exportToCSV(visible, defaultExportFilename(currentDate));
   };
 
-  const activeFilters = activeFilterCount(filters);
+  const activeFilters = activeFilterCount(filters, selectedTool);
 
   return (
     <header
@@ -90,6 +106,8 @@ export function Header({
             </p>
           </div>
         </div>
+
+        <ToolPicker value={selectedTool} onChange={setSelectedTool} />
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <div className="relative">
@@ -148,6 +166,17 @@ export function Header({
             <span className="hidden md:inline">Freezes</span>
           </Button>
 
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onOpenInsights}
+            aria-label="Open AI insights"
+            className="border border-accenture-300/40 bg-accenture-400/10 text-accenture-700 hover:bg-accenture-400/20 dark:text-accenture-200"
+          >
+            <Sparkles size={14} />
+            <span className="hidden md:inline">Insights</span>
+          </Button>
+
           <Button variant="secondary" size="sm" onClick={handleExport} aria-label="Export CSV">
             <Download size={14} />
             <span className="hidden md:inline">Export</span>
@@ -178,5 +207,51 @@ export function Header({
         </div>
       )}
     </header>
+  );
+}
+
+function ToolPicker({
+  value,
+  onChange,
+}: {
+  value: ToolSelection;
+  onChange: (t: ToolSelection) => void;
+}) {
+  const swatchColor = value === 'all' ? '#94A3B8' : TEAMS[value].color;
+  const label = value === 'all' ? 'All tools' : value;
+  return (
+    <label className="relative flex items-center">
+      <span className="sr-only">Select tool</span>
+      <div
+        className={cx(
+          'flex items-center gap-2 rounded-btn border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium font-body text-slate-800 transition-colors',
+          'hover:border-accenture-300 focus-within:border-accenture-400',
+          'dark:border-slate-700 dark:bg-surface-dark-tertiary dark:text-slate-100',
+        )}
+      >
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Tool
+        </span>
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ backgroundColor: swatchColor }}
+          aria-hidden="true"
+        />
+        <span className="font-display">{label}</span>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as ToolSelection)}
+          className="absolute inset-0 cursor-pointer opacity-0"
+          aria-label="Select tool"
+        >
+          <option value="all">All tools</option>
+          {TEAM_KEYS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
+      </div>
+    </label>
   );
 }

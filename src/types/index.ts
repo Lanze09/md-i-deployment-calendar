@@ -25,7 +25,10 @@ export interface Deployment {
   description: string | null;
   team: TeamKey;
   environment: EnvironmentName;
+  /** ISO date — first day of the deployment / enhancement window */
   deploy_date: string;
+  /** ISO date — last day of the deployment / enhancement window (inclusive). Equal to deploy_date for single-day items. */
+  deploy_end_date: string;
   deploy_time_start: string | null;
   deploy_time_end: string | null;
   status: DeploymentStatus;
@@ -33,9 +36,13 @@ export interface Deployment {
   risk_level: RiskLevel;
   rollback_plan: string | null;
   notes: string | null;
+  /** Per-enhancement bar colour (CSS hex). When null, falls back to the tool's signature colour. Used in single-tool focus mode; tool colour is always used in All-tools view. */
+  color: string | null;
   created_at?: string;
   updated_at?: string;
 }
+
+export type ToolSelection = TeamKey | 'all';
 
 export type DeploymentInput = Omit<Deployment, 'id' | 'created_at' | 'updated_at'>;
 
@@ -52,10 +59,11 @@ export interface FreezePeriod {
 export type FreezePeriodInput = Omit<FreezePeriod, 'id' | 'created_at'>;
 
 export interface FilterState {
-  teams: TeamKey[];
   environments: EnvironmentName[];
   statuses: DeploymentStatus[];
   riskLevels: RiskLevel[];
+  /** Deployment IDs — only applied when a specific tool is selected. Empty array = no filter. */
+  enhancements: string[];
   search: string;
 }
 

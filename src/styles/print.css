@@ -1,0 +1,61 @@
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide chrome */
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Print-only header */
+  [data-print-only] {
+    display: block !important;
+  }
+
+  /* Force light theme for print */
+  .dark .card,
+  .card {
+    background: white !important;
+    color: black !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Calendar grid takes full width */
+  [data-calendar-grid] {
+    width: 100% !important;
+  }
+
+  /* Avoid breaking day cells across pages */
+  [data-day-cell] {
+    break-inside: avoid;
+  }
+
+  /* Show deployment details list after calendar */
+  [data-print-details] {
+    display: block !important;
+    margin-top: 24px;
+  }
+
+  [data-print-details] h2 {
+    font-size: 14pt;
+    margin-bottom: 8px;
+  }
+
+  [data-print-details] li {
+    margin-bottom: 4px;
+    font-size: 9pt;
+  }
+}
+
+[data-print-only],
+[data-print-details] {
+  display: none;
+}

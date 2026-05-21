@@ -1,16 +1,21 @@
 import {
   differenceInCalendarDays,
+  eachDayOfInterval,
   format,
   isWithinInterval,
+  max as maxDate,
+  min as minDate,
   parseISO,
   startOfDay,
 } from 'date-fns';
 import Papa from 'papaparse';
+import { TEAMS } from '../constants/teams';
 import type {
   Conflict,
   Deployment,
   FilterState,
   FreezePeriod,
+  ToolSelection,
 } from '../types';
 
 export const DATE_FMT = 'yyyy-MM-dd';
@@ -26,30 +31,83 @@ export const daysUntil = (iso: string): number =>
   differenceInCalendarDays(parseISO(iso), startOfDay(new Date()));
 
 // ---------------------------------------------------------------------
-// Conflict detection — same env + same date for 2+ different teams
+// Range helpers
+// ---------------------------------------------------------------------
+export function deploymentRange(
+  d: Pick<Deployment, 'deploy_date' | 'deploy_end_date'>,
+): { start: Date; end: Date } {
+  const start = parseISO(d.deploy_date);
+  const end = parseISO(d.deploy_end_date);
+  return { start, end: end < start ? start : end };
+}
+
+export function deploymentSpanDays(
+  d: Pick<Deployment, 'deploy_date' | 'deploy_end_date'>,
+): number {
+  const { start, end } = deploymentRange(d);
+  return differenceInCalendarDays(end, start) + 1;
+}
+
+export function deploymentContainsDate(
+  d: Pick<Deployment, 'deploy_date' | 'deploy_end_date'>,
+  iso: string,
+): boolean {
+  return d.deploy_date <= iso && iso <= d.deploy_end_date;
+}
+
+export function rangesOverlap(
+  a: Pick<Deployment, 'deploy_date' | 'deploy_end_date'>,
+  b: Pick<Deployment, 'deploy_date' | 'deploy_end_date'>,
+): boolean {
+  return a.deploy_date <= b.deploy_end_date && b.deploy_date <= a.deploy_end_date;
+}
+
+// ---------------------------------------------------------------------
+// Conflict detection — same env + overlapping range across 2+ teams
 // ---------------------------------------------------------------------
 export function detectConflicts(deployments: Deployment[]): Conflict[] {
-  const grouped = new Map<string, Deployment[]>();
-  for (const d of deployments) {
-    if (d.status === 'Cancelled') continue;
-    const key = `${d.deploy_date}|${d.environment}`;
-    const list = grouped.get(key) ?? [];
+  const active = deployments.filter((d) => d.status !== 'Cancelled');
+  const byEnv = new Map<string, Deployment[]>();
+  for (const d of active) {
+    const list = byEnv.get(d.environment) ?? [];
     list.push(d);
-    grouped.set(key, list);
+    byEnv.set(d.environment, list);
   }
-  const conflicts: Conflict[] = [];
-  for (const [key, list] of grouped) {
-    const distinctTeams = new Set(list.map((d) => d.team));
-    if (distinctTeams.size >= 2) {
-      const [date, environment] = key.split('|');
-      conflicts.push({
-        date,
-        environment: environment as Conflict['environment'],
-        deployments: list,
-      });
+  const out = new Map<string, Conflict>();
+  for (const [env, list] of byEnv) {
+    list.sort((a, b) => a.deploy_date.localeCompare(b.deploy_date));
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        if (a.deploy_end_date < b.deploy_date) break;
+        if (!rangesOverlap(a, b)) continue;
+        if (a.team === b.team) continue;
+        const overlapStart = a.deploy_date > b.deploy_date ? a.deploy_date : b.deploy_date;
+        const overlapEnd = a.deploy_end_date < b.deploy_end_date ? a.deploy_end_date : b.deploy_end_date;
+        for (const iso of eachDayInRange(overlapStart, overlapEnd)) {
+          const key = `${iso}|${env}`;
+          const existing = out.get(key);
+          if (existing) {
+            if (!existing.deployments.includes(a)) existing.deployments.push(a);
+            if (!existing.deployments.includes(b)) existing.deployments.push(b);
+          } else {
+            out.set(key, {
+              date: iso,
+              environment: env as Conflict['environment'],
+              deployments: [a, b],
+            });
+          }
+        }
+      }
     }
   }
-  return conflicts;
+  return Array.from(out.values());
+}
+
+function eachDayInRange(startIso: string, endIso: string): string[] {
+  const days = eachDayOfInterval({ start: parseISO(startIso), end: parseISO(endIso) });
+  return days.map((d) => format(d, DATE_FMT));
 }
 
 export function deploymentConflicts(
@@ -60,9 +118,9 @@ export function deploymentConflicts(
     (d) =>
       d.id !== deployment.id &&
       d.status !== 'Cancelled' &&
-      d.deploy_date === deployment.deploy_date &&
       d.environment === deployment.environment &&
-      d.team !== deployment.team,
+      d.team !== deployment.team &&
+      rangesOverlap(d, deployment),
   );
 }
 
@@ -83,18 +141,31 @@ export function isDateFrozen(
 }
 
 export function deploymentIsFrozen(
-  deployment: Pick<Deployment, 'deploy_date' | 'environment'>,
+  deployment: Pick<Deployment, 'deploy_date' | 'deploy_end_date' | 'environment'>,
   freezePeriods: FreezePeriod[],
 ): FreezePeriod | null {
-  const frozen = isDateFrozen(deployment.deploy_date, freezePeriods);
-  if (!frozen) return null;
-  if (
-    frozen.affected_environments.length === 0 ||
-    frozen.affected_environments.includes(deployment.environment)
-  ) {
-    return frozen;
+  for (const f of freezePeriods) {
+    if (f.start_date > deployment.deploy_end_date) continue;
+    if (f.end_date < deployment.deploy_date) continue;
+    if (
+      f.affected_environments.length === 0 ||
+      f.affected_environments.includes(deployment.environment)
+    ) {
+      return f;
+    }
   }
   return null;
+}
+
+/** Clip a deployment's range to the visible window [windowStart, windowEnd] (both ISO strings). Returns null if outside. */
+export function clipRangeToWindow(
+  d: Pick<Deployment, 'deploy_date' | 'deploy_end_date'>,
+  windowStart: Date,
+  windowEnd: Date,
+): { start: Date; end: Date } | null {
+  const { start, end } = deploymentRange(d);
+  if (end < windowStart || start > windowEnd) return null;
+  return { start: maxDate([start, windowStart]), end: minDate([end, windowEnd]) };
 }
 
 // ---------------------------------------------------------------------
@@ -103,10 +174,13 @@ export function deploymentIsFrozen(
 export function applyFilters(
   deployments: Deployment[],
   filters: FilterState,
+  selectedTool: ToolSelection = 'all',
 ): Deployment[] {
   const search = filters.search.trim().toLowerCase();
+  const enhancementFilterActive = selectedTool !== 'all' && filters.enhancements.length > 0;
   return deployments.filter((d) => {
-    if (filters.teams.length && !filters.teams.includes(d.team)) return false;
+    if (selectedTool !== 'all' && d.team !== selectedTool) return false;
+    if (enhancementFilterActive && !filters.enhancements.includes(d.id)) return false;
     if (filters.environments.length && !filters.environments.includes(d.environment))
       return false;
     if (filters.statuses.length && !filters.statuses.includes(d.status)) return false;
@@ -119,14 +193,30 @@ export function applyFilters(
   });
 }
 
-export function activeFilterCount(filters: FilterState): number {
+export function activeFilterCount(
+  filters: FilterState,
+  selectedTool: ToolSelection = 'all',
+): number {
   return (
-    filters.teams.length +
     filters.environments.length +
     filters.statuses.length +
     filters.riskLevels.length +
+    (selectedTool !== 'all' ? filters.enhancements.length : 0) +
     (filters.search.trim() ? 1 : 0)
   );
+}
+
+/**
+ * Resolve the colour to use for a deployment's bar:
+ * - **All-tools** view → always the tool's signature colour (so bars group visually by tool).
+ * - **Single-tool focus** → the per-enhancement custom colour if set, otherwise the tool's colour.
+ */
+export function effectiveColor(
+  d: Pick<Deployment, 'team' | 'color'>,
+  selectedTool: ToolSelection,
+): string {
+  if (selectedTool === 'all') return TEAMS[d.team].color;
+  return d.color ?? TEAMS[d.team].color;
 }
 
 // ---------------------------------------------------------------------
@@ -134,7 +224,8 @@ export function activeFilterCount(filters: FilterState): number {
 // ---------------------------------------------------------------------
 export function exportToCSV(deployments: Deployment[], filename: string): void {
   const rows = deployments.map((d) => ({
-    Date: d.deploy_date,
+    'Start Date': d.deploy_date,
+    'End Date': d.deploy_end_date,
     Team: d.team,
     Environment: d.environment,
     Title: d.title,

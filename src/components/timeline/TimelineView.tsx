@@ -5,7 +5,6 @@ import {
   eachDayOfInterval,
   endOfMonth,
   format,
-  isSameMonth,
   parseISO,
   startOfMonth,
 } from 'date-fns';
@@ -13,12 +12,13 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TEAMS, TEAM_KEYS } from '../../constants/teams';
-import { applyFilters } from '../../lib/utils';
+import { applyFilters, effectiveColor } from '../../lib/utils';
 import type { Deployment, TeamKey } from '../../types';
 import { Button } from '../ui/Button';
 import { TimelineBar } from './TimelineBar';
 
-const ROW_HEIGHT = 80;
+const ROW_HEIGHT_TEAM = 80;
+const ROW_HEIGHT_DEPLOY = 44;
 
 export interface TimelineViewProps {
   onDeploymentClick: (d: Deployment) => void;
@@ -26,7 +26,8 @@ export interface TimelineViewProps {
 
 export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
   const app = useApp();
-  const { currentDate, setCurrentDate, deployments, filters } = app;
+  const { currentDate, setCurrentDate, deployments, filters, selectedTool } = app;
+  const singleTool = selectedTool !== 'all';
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -37,17 +38,18 @@ export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
   );
 
   const filtered = useMemo(
-    () => applyFilters(deployments.deployments, filters),
-    [deployments.deployments, filters],
+    () => applyFilters(deployments.deployments, filters, selectedTool),
+    [deployments.deployments, filters, selectedTool],
   );
 
   const monthDeployments = useMemo(
     () =>
-      filtered.filter((d) => {
-        const date = parseISO(d.deploy_date);
-        return isSameMonth(date, currentDate);
-      }),
-    [filtered, currentDate],
+      filtered.filter(
+        (d) =>
+          d.deploy_date <= format(monthEnd, 'yyyy-MM-dd') &&
+          d.deploy_end_date >= format(monthStart, 'yyyy-MM-dd'),
+      ),
+    [filtered, monthStart, monthEnd],
   );
 
   const grouped = useMemo(() => {
@@ -67,27 +69,25 @@ export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
     return map;
   }, [monthDeployments]);
 
-  // Stack bars within a team row to avoid overlap.
-  const stacked = useMemo(() => {
+  // Lane assignment for the per-team view (only relevant in All-tools mode).
+  const stackedByTeam = useMemo(() => {
     const result = new Map<string, number>();
     for (const team of TEAM_KEYS) {
-      const list = grouped[team];
-      const stacks: string[][] = [];
+      const list = [...grouped[team]];
+      const laneEnds: string[] = [];
       for (const d of list) {
         let placed = false;
-        for (let i = 0; i < stacks.length; i++) {
-          const lastId = stacks[i][stacks[i].length - 1];
-          const last = list.find((x) => x.id === lastId);
-          if (last && last.deploy_date !== d.deploy_date) {
-            stacks[i].push(d.id);
+        for (let i = 0; i < laneEnds.length; i++) {
+          if (laneEnds[i] < d.deploy_date) {
+            laneEnds[i] = d.deploy_end_date;
             result.set(d.id, i);
             placed = true;
             break;
           }
         }
         if (!placed) {
-          stacks.push([d.id]);
-          result.set(d.id, stacks.length - 1);
+          laneEnds.push(d.deploy_end_date);
+          result.set(d.id, laneEnds.length - 1);
         }
       }
     }
@@ -101,17 +101,38 @@ export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
     for (const team of TEAM_KEYS) {
       let highest = 0;
       for (const d of grouped[team]) {
-        const s = stacked.get(d.id) ?? 0;
+        const s = stackedByTeam.get(d.id) ?? 0;
         if (s > highest) highest = s;
       }
       max[team] = highest + 1;
     }
     return max;
-  }, [grouped, stacked]);
+  }, [grouped, stackedByTeam]);
+
+  // For single-tool mode: a flat list of deployments belonging to the chosen tool, sorted.
+  const toolDeployments = useMemo(() => {
+    if (!singleTool) return [];
+    return [...monthDeployments].sort(
+      (a, b) => a.deploy_date.localeCompare(b.deploy_date) || a.title.localeCompare(b.title),
+    );
+  }, [monthDeployments, singleTool]);
+
+  const positionOf = (d: Deployment): { leftPct: number; widthPct: number } => {
+    const start = parseISO(d.deploy_date);
+    const end = parseISO(d.deploy_end_date);
+    const clippedStart = start < monthStart ? monthStart : start;
+    const clippedEnd = end > monthEnd ? monthEnd : end;
+    const startIdx = differenceInCalendarDays(clippedStart, monthStart);
+    const spanDays = differenceInCalendarDays(clippedEnd, clippedStart) + 1;
+    return {
+      leftPct: (startIdx / totalDays) * 100,
+      widthPct: (spanDays / totalDays) * 100,
+    };
+  };
 
   return (
     <motion.div
-      key={`timeline-${format(currentDate, 'yyyy-MM')}`}
+      key={`timeline-${format(currentDate, 'yyyy-MM')}-${selectedTool}`}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
@@ -121,6 +142,11 @@ export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
       <div className="flex items-center justify-between px-1">
         <h2 className="font-display text-2xl font-semibold text-slate-900 dark:text-slate-100">
           {format(currentDate, 'MMMM yyyy')} — Timeline
+          {singleTool && (
+            <span className="ml-2 align-middle text-base font-normal text-slate-500 dark:text-slate-400">
+              · {selectedTool}
+            </span>
+          )}
         </h2>
         <div className="flex items-center gap-1.5">
           <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())}>
@@ -138,8 +164,10 @@ export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
       <div className="card overflow-x-auto">
         <div className="min-w-[900px]">
           {/* Date axis */}
-          <div className="sticky top-0 z-10 grid grid-cols-[120px_1fr] border-b border-slate-200 bg-surface-light-primary px-2 py-2 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-surface-dark-secondary dark:text-slate-400">
-            <div className="font-display text-xs font-semibold uppercase tracking-wide">Team</div>
+          <div className="sticky top-0 z-10 grid grid-cols-[220px_1fr] border-b border-slate-200 bg-surface-light-primary px-2 py-2 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-surface-dark-secondary dark:text-slate-400">
+            <div className="font-display text-xs font-semibold uppercase tracking-wide">
+              {singleTool ? 'Deployment' : 'Tool'}
+            </div>
             <div
               className="grid"
               style={{ gridTemplateColumns: `repeat(${totalDays}, minmax(0, 1fr))` }}
@@ -152,56 +180,117 @@ export function TimelineView({ onDeploymentClick }: TimelineViewProps) {
             </div>
           </div>
 
-          {/* Team rows */}
-          {TEAM_KEYS.map((team) => {
-            const team_meta = TEAMS[team];
-            const list = grouped[team];
-            const stacks = rowMaxStacks[team];
-            const rowHeight = Math.max(ROW_HEIGHT, stacks * 32 + 24);
-            return (
-              <div
-                key={team}
-                className="grid grid-cols-[120px_1fr] border-b border-slate-200 dark:border-slate-800"
-                style={{ height: `${rowHeight}px` }}
-              >
-                <div className="flex items-center gap-2 border-r border-slate-200 px-3 dark:border-slate-800">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: team_meta.color }} />
-                  <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                    {team_meta.label}
-                  </span>
+          {singleTool
+            ? // ---------- Per-deployment rows ----------
+              (toolDeployments.length === 0 ? (
+                <div className="grid grid-cols-[220px_1fr]">
+                  <div className="px-3 py-6 text-sm text-slate-400">No deployments</div>
+                  <div />
                 </div>
-                <div className="relative">
-                  {/* faint grid */}
+              ) : (
+                toolDeployments.map((d) => {
+                  const { leftPct, widthPct } = positionOf(d);
+                  const color = effectiveColor(d, selectedTool);
+                  return (
+                    <div
+                      key={d.id}
+                      className="grid grid-cols-[220px_1fr] border-b border-slate-200 dark:border-slate-800"
+                      style={{ height: `${ROW_HEIGHT_DEPLOY}px` }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onDeploymentClick(d)}
+                        className="flex min-w-0 items-center gap-2 border-r border-slate-200 px-3 text-left transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-surface-dark-tertiary"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="min-w-0 truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                          {d.title}
+                        </span>
+                        <span className="ml-auto truncate text-[10px] uppercase tracking-wide text-slate-400">
+                          {d.environment}
+                        </span>
+                      </button>
+                      <div className="relative">
+                        <div
+                          className="absolute inset-0 grid"
+                          style={{
+                            gridTemplateColumns: `repeat(${totalDays}, minmax(0, 1fr))`,
+                          }}
+                        >
+                          {days.map((dd) => (
+                            <div
+                              key={dd.toString()}
+                              className="border-r border-slate-100 last:border-r-0 dark:border-slate-800/60"
+                            />
+                          ))}
+                        </div>
+                        <TimelineBar
+                          deployment={d}
+                          color={color}
+                          leftPct={leftPct}
+                          widthPct={widthPct}
+                          onClick={onDeploymentClick}
+                          stackIndex={0}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              ))
+            : // ---------- Per-tool rows ----------
+              TEAM_KEYS.map((team) => {
+                const team_meta = TEAMS[team];
+                const list = grouped[team];
+                const stacks = rowMaxStacks[team];
+                const rowHeight = Math.max(ROW_HEIGHT_TEAM, stacks * 32 + 24);
+                return (
                   <div
-                    className="absolute inset-0 grid"
-                    style={{ gridTemplateColumns: `repeat(${totalDays}, minmax(0, 1fr))` }}
+                    key={team}
+                    className="grid grid-cols-[220px_1fr] border-b border-slate-200 dark:border-slate-800"
+                    style={{ height: `${rowHeight}px` }}
                   >
-                    {days.map((d) => (
+                    <div className="flex items-center gap-2 border-r border-slate-200 px-3 dark:border-slate-800">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: team_meta.color }}
+                      />
+                      <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                        {team_meta.label}
+                      </span>
+                    </div>
+                    <div className="relative">
                       <div
-                        key={d.toString()}
-                        className="border-r border-slate-100 last:border-r-0 dark:border-slate-800/60"
-                      />
-                    ))}
+                        className="absolute inset-0 grid"
+                        style={{ gridTemplateColumns: `repeat(${totalDays}, minmax(0, 1fr))` }}
+                      >
+                        {days.map((d) => (
+                          <div
+                            key={d.toString()}
+                            className="border-r border-slate-100 last:border-r-0 dark:border-slate-800/60"
+                          />
+                        ))}
+                      </div>
+                      {list.map((d) => {
+                        const { leftPct, widthPct } = positionOf(d);
+                        return (
+                          <TimelineBar
+                            key={d.id}
+                            deployment={d}
+                            color={effectiveColor(d, selectedTool)}
+                            leftPct={leftPct}
+                            widthPct={widthPct}
+                            onClick={onDeploymentClick}
+                            stackIndex={stackedByTeam.get(d.id) ?? 0}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                  {list.map((d) => {
-                    const dayIdx = differenceInCalendarDays(parseISO(d.deploy_date), monthStart);
-                    const leftPct = (dayIdx / totalDays) * 100;
-                    const widthPct = (1 / totalDays) * 100;
-                    return (
-                      <TimelineBar
-                        key={d.id}
-                        deployment={d}
-                        leftPct={leftPct}
-                        widthPct={widthPct}
-                        onClick={onDeploymentClick}
-                        stackIndex={stacked.get(d.id) ?? 0}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
         </div>
       </div>
     </motion.div>

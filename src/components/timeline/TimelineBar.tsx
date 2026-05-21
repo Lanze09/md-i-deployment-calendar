@@ -1,18 +1,17 @@
 import { motion } from 'framer-motion';
-import { TEAMS } from '../../constants/teams';
 import type { Deployment } from '../../types';
 import { cx } from '../../lib/utils';
 
 export interface TimelineBarProps {
   deployment: Deployment;
+  color: string;
   leftPct: number;
   widthPct: number;
   onClick: (d: Deployment) => void;
   stackIndex: number;
 }
 
-export function TimelineBar({ deployment, leftPct, widthPct, onClick, stackIndex }: TimelineBarProps) {
-  const team = TEAMS[deployment.team];
+export function TimelineBar({ deployment, color, leftPct, widthPct, onClick, stackIndex }: TimelineBarProps) {
   const isCancelled = deployment.status === 'Cancelled';
   return (
     <motion.button
@@ -30,9 +29,9 @@ export function TimelineBar({ deployment, leftPct, widthPct, onClick, stackIndex
         left: `${leftPct}%`,
         width: `${Math.max(widthPct, 2.4)}%`,
         top: `${stackIndex * 32 + 6}px`,
-        backgroundColor: `${team.color}29`,
-        color: team.color,
-        boxShadow: `inset 0 0 0 1px ${team.color}80`,
+        backgroundColor: `${color}29`,
+        color: color,
+        boxShadow: `inset 0 0 0 1px ${color}80`,
       }}
       title={`${deployment.title} — ${deployment.environment} (${deployment.status})`}
     >

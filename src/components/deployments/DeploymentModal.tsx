@@ -16,25 +16,44 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Modal } from '../ui/Modal';
 import { Select } from '../ui/Select';
 
-const emptyInput = (dateIso: string | null): DeploymentInput => ({
-  title: '',
-  description: null,
-  team: 'IDM',
-  environment: 'Development',
-  deploy_date: dateIso ?? new Date().toISOString().slice(0, 10),
-  deploy_time_start: null,
-  deploy_time_end: null,
-  status: 'Scheduled',
-  owner: '',
-  risk_level: 'Low',
-  rollback_plan: null,
-  notes: null,
-});
+const emptyInput = (dateIso: string | null): DeploymentInput => {
+  const start = dateIso ?? new Date().toISOString().slice(0, 10);
+  return {
+    title: '',
+    description: null,
+    team: 'IDM',
+    environment: 'Development',
+    deploy_date: start,
+    deploy_end_date: start,
+    deploy_time_start: null,
+    deploy_time_end: null,
+    status: 'Scheduled',
+    owner: '',
+    risk_level: 'Low',
+    rollback_plan: null,
+    notes: null,
+    color: null,
+  };
+};
+
+const PRESET_COLORS = [
+  '#A100FF', // accenture
+  '#0070F3', // blue
+  '#00B140', // green
+  '#F5A623', // amber
+  '#E4002B', // red
+  '#00C2CE', // teal
+  '#FF6B35', // orange
+  '#9333EA', // purple
+  '#EC4899', // pink
+  '#0EA5E9', // sky
+];
 
 interface FormErrors {
   title?: string;
   owner?: string;
   deploy_date?: string;
+  deploy_end_date?: string;
 }
 
 export function DeploymentModal() {
@@ -66,7 +85,7 @@ export function DeploymentModal() {
   }, [isDeploymentModalOpen, editingDeployment, selectedDate]);
 
   const frozen = deploymentIsFrozen(
-    { deploy_date: form.deploy_date, environment: form.environment },
+    { deploy_date: form.deploy_date, deploy_end_date: form.deploy_end_date, environment: form.environment },
     freezePeriods.freezePeriods,
   );
 
@@ -74,7 +93,10 @@ export function DeploymentModal() {
     const next: FormErrors = {};
     if (!form.title.trim()) next.title = 'Title is required';
     if (!form.owner.trim()) next.owner = 'Owner is required';
-    if (!form.deploy_date) next.deploy_date = 'Date is required';
+    if (!form.deploy_date) next.deploy_date = 'Start date is required';
+    if (!form.deploy_end_date) next.deploy_end_date = 'End date is required';
+    else if (form.deploy_end_date < form.deploy_date)
+      next.deploy_end_date = 'End date must be on or after the start date';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -186,15 +208,36 @@ export function DeploymentModal() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <Field
-              label="Date"
+              label="Start date"
               error={errors.deploy_date}
               input={
                 <input
                   type="date"
                   value={form.deploy_date}
-                  onChange={(e) => setForm({ ...form, deploy_date: e.target.value })}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setForm((f) => ({
+                      ...f,
+                      deploy_date: next,
+                      // Auto-bump end date forward if it's now before start
+                      deploy_end_date: f.deploy_end_date < next ? next : f.deploy_end_date,
+                    }));
+                  }}
+                  className={inputClass}
+                />
+              }
+            />
+            <Field
+              label="End date"
+              error={errors.deploy_end_date}
+              input={
+                <input
+                  type="date"
+                  value={form.deploy_end_date}
+                  min={form.deploy_date}
+                  onChange={(e) => setForm({ ...form, deploy_end_date: e.target.value })}
                   className={inputClass}
                 />
               }
@@ -271,6 +314,60 @@ export function DeploymentModal() {
                     </button>
                   );
                 })}
+              </div>
+            }
+          />
+
+          <Field
+            label="Bar colour (single-tool view)"
+            input={
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, color: null })}
+                  className={cx(
+                    'flex items-center gap-1.5 rounded-pill border px-2 py-1 text-[11px] font-medium transition-colors',
+                    form.color === null
+                      ? 'border-accenture-400 bg-accenture-400/10 text-accenture-700 dark:text-accenture-200'
+                      : 'border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-surface-dark-tertiary',
+                  )}
+                  aria-pressed={form.color === null}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: TEAMS[form.team].color }}
+                  />
+                  Tool default
+                </button>
+                {PRESET_COLORS.map((c) => {
+                  const active = form.color?.toLowerCase() === c.toLowerCase();
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setForm({ ...form, color: c })}
+                      className={cx(
+                        'h-6 w-6 rounded-full transition-all',
+                        active ? 'ring-2 ring-offset-2 ring-offset-surface-light-primary dark:ring-offset-surface-dark-secondary' : 'opacity-80 hover:opacity-100',
+                      )}
+                      style={{ backgroundColor: c, ['--tw-ring-color' as string]: c }}
+                      aria-label={`Set colour to ${c}`}
+                      aria-pressed={active}
+                    />
+                  );
+                })}
+                <label className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600" title="Custom colour">
+                  <input
+                    type="color"
+                    value={form.color ?? TEAMS[form.team].color}
+                    onChange={(e) => setForm({ ...form, color: e.target.value })}
+                    className="h-0 w-0 opacity-0"
+                  />
+                  <span className="text-[10px] text-slate-500">+</span>
+                </label>
+                <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
+                  Used only when filtering by this tool
+                </span>
               </div>
             }
           />

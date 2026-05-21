@@ -116,6 +116,11 @@ export function DeploymentList({
                                   ? `${d.deploy_time_start}${d.deploy_time_end ? `–${d.deploy_time_end}` : ''} · `
                                   : ''}
                                 {d.owner}
+                                {d.deploy_date !== d.deploy_end_date && (
+                                  <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">
+                                    · {d.deploy_date} → {d.deploy_end_date}
+                                  </span>
+                                )}
                               </p>
                             </div>
                           </div>

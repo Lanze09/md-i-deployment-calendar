@@ -21,7 +21,7 @@ export function Checkbox({ checked, onChange, label, dotColor, className }: Chec
     >
       <span
         className={cx(
-          'flex h-4 w-4 items-center justify-center rounded border transition-colors',
+          'flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition-colors',
           checked
             ? 'border-accenture-400 bg-accenture-400 text-white'
             : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-surface-dark-tertiary',
@@ -42,7 +42,9 @@ export function Checkbox({ checked, onChange, label, dotColor, className }: Chec
           style={{ backgroundColor: dotColor }}
         />
       )}
-      <span className="text-sm text-slate-700 dark:text-slate-200">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">
+        {label}
+      </span>
     </label>
   );
 }

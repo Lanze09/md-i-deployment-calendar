@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
+import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   ENVIRONMENTS,
@@ -8,7 +9,7 @@ import {
   STATUSES,
   STATUS_COLORS,
 } from '../../constants/environments';
-import { TEAMS, TEAM_KEYS } from '../../constants/teams';
+import { effectiveColor } from '../../lib/utils';
 import { FreezePeriodOverlay } from '../freeze/FreezePeriodOverlay';
 import { Checkbox } from '../ui/Checkbox';
 import { Button } from '../ui/Button';
@@ -20,7 +21,24 @@ export interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const app = useApp();
-  const { filters, toggleFilter, setAllFilters, clearFilters, freezePeriods } = app;
+  const {
+    filters,
+    toggleFilter,
+    setAllFilters,
+    clearFilters,
+    freezePeriods,
+    selectedTool,
+    deployments,
+  } = app;
+
+  // Deployments belonging to the currently-selected tool, sorted by start date.
+  // Only used when a specific tool is selected (not "All tools").
+  const toolDeployments = useMemo(() => {
+    if (selectedTool === 'all') return [];
+    return deployments.deployments
+      .filter((d) => d.team === selectedTool)
+      .sort((a, b) => a.deploy_date.localeCompare(b.deploy_date));
+  }, [deployments.deployments, selectedTool]);
 
   return (
     <AnimatePresence>
@@ -61,21 +79,32 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto pr-1">
-              <FilterGroup
-                title="Teams"
-                onSelectAll={() => setAllFilters('teams', [...TEAM_KEYS])}
-                onClear={() => setAllFilters('teams', [])}
-              >
-                {TEAM_KEYS.map((t) => (
-                  <Checkbox
-                    key={t}
-                    checked={filters.teams.includes(t)}
-                    onChange={() => toggleFilter('teams', t)}
-                    dotColor={TEAMS[t].color}
-                    label={`${TEAMS[t].label} — ${TEAMS[t].fullName}`}
-                  />
-                ))}
-              </FilterGroup>
+              {selectedTool !== 'all' && toolDeployments.length > 0 && (
+                <FilterGroup
+                  title={`Deployments — ${selectedTool}`}
+                  onSelectAll={() =>
+                    setAllFilters('enhancements', toolDeployments.map((d) => d.id))
+                  }
+                  onClear={() => setAllFilters('enhancements', [])}
+                >
+                  {toolDeployments.map((d) => (
+                    <Checkbox
+                      key={d.id}
+                      checked={filters.enhancements.includes(d.id)}
+                      onChange={() => toggleFilter('enhancements', d.id)}
+                      dotColor={effectiveColor(d, selectedTool)}
+                      label={
+                        <>
+                          {d.title}
+                          <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">
+                            · {d.environment}
+                          </span>
+                        </>
+                      }
+                    />
+                  ))}
+                </FilterGroup>
+              )}
 
               <FilterGroup
                 title="Environments"

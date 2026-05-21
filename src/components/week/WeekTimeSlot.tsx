@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
-import { TEAMS } from '../../constants/teams';
 import { cx } from '../../lib/utils';
 import type { Deployment } from '../../types';
 
 export interface WeekTimeSlotProps {
   deployment: Deployment;
+  color: string;
   topPct: number;
   heightPct: number;
   onClick: (d: Deployment) => void;
@@ -14,13 +14,13 @@ export interface WeekTimeSlotProps {
 
 export function WeekTimeSlot({
   deployment,
+  color,
   topPct,
   heightPct,
   onClick,
   laneIndex,
   lanesInColumn,
 }: WeekTimeSlotProps) {
-  const team = TEAMS[deployment.team];
   const widthPct = 100 / lanesInColumn;
   return (
     <motion.button
@@ -38,9 +38,9 @@ export function WeekTimeSlot({
         height: `max(${heightPct}%, 18px)`,
         left: `${laneIndex * widthPct}%`,
         width: `calc(${widthPct}% - 2px)`,
-        backgroundColor: `${team.color}26`,
-        color: team.color,
-        boxShadow: `inset 0 0 0 1px ${team.color}80`,
+        backgroundColor: `${color}26`,
+        color: color,
+        boxShadow: `inset 0 0 0 1px ${color}80`,
       }}
       title={`${deployment.title} — ${deployment.environment}`}
     >

@@ -5,6 +5,13 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
   html {
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -12,6 +19,17 @@
 
   body {
     @apply min-h-screen transition-colors duration-300;
+  }
+
+  /* Native <select> dropdown options — force readable colours in both themes
+     so the popup list matches the page instead of using OS defaults. */
+  select option {
+    color: #1e293b; /* slate-800 */
+    background: #ffffff;
+  }
+  .dark select option {
+    color: #f1f5f9; /* slate-100 */
+    background: #252540; /* surface-dark-tertiary */
   }
 
   h1, h2, h3, h4, h5, h6 {

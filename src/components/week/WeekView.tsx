@@ -4,13 +4,12 @@ import {
   endOfWeek,
   format,
   isSameDay,
-  parseISO,
   startOfWeek,
 } from 'date-fns';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { applyFilters, cx } from '../../lib/utils';
+import { applyFilters, cx, deploymentContainsDate, effectiveColor } from '../../lib/utils';
 import { DeploymentBadge } from '../calendar/DeploymentBadge';
 import type { Deployment } from '../../types';
 import { Button } from '../ui/Button';
@@ -78,15 +77,19 @@ export function WeekView({ onDeploymentClick }: WeekViewProps) {
   );
 
   const filtered = useMemo(
-    () => applyFilters(deployments.deployments, filters),
-    [deployments.deployments, filters],
+    () => applyFilters(deployments.deployments, filters, app.selectedTool),
+    [deployments.deployments, filters, app.selectedTool],
   );
 
   const dayBuckets = useMemo(() => {
     return days.map((day) => {
-      const items = filtered.filter((d) => isSameDay(parseISO(d.deploy_date), day));
-      const allDay = items.filter((d) => !d.deploy_time_start);
-      const timed = items.filter((d) => d.deploy_time_start);
+      const iso = format(day, 'yyyy-MM-dd');
+      // Deployment appears on a day if its range covers that day,
+      // OR (multi-day items always appear as all-day on every day they cover).
+      const items = filtered.filter((d) => deploymentContainsDate(d, iso));
+      const isMultiDay = (d: typeof items[number]) => d.deploy_date !== d.deploy_end_date;
+      const allDay = items.filter((d) => !d.deploy_time_start || isMultiDay(d));
+      const timed = items.filter((d) => d.deploy_time_start && !isMultiDay(d));
       const { lanes, laneCount } = assignLanes(timed);
       return { day, allDay, timed, lanes, laneCount };
     });
@@ -144,7 +147,13 @@ export function WeekView({ onDeploymentClick }: WeekViewProps) {
           {dayBuckets.map((b) => (
             <div key={`allday-${b.day.toString()}`} className="flex min-h-[32px] flex-col gap-0.5 border-l border-slate-200 px-1 py-1 dark:border-slate-800">
               {b.allDay.map((d) => (
-                <DeploymentBadge key={d.id} deployment={d} onClick={onDeploymentClick} showEnv />
+                <DeploymentBadge
+                  key={d.id}
+                  deployment={d}
+                  color={effectiveColor(d, app.selectedTool)}
+                  onClick={onDeploymentClick}
+                  showEnv
+                />
               ))}
             </div>
           ))}
@@ -183,6 +192,7 @@ export function WeekView({ onDeploymentClick }: WeekViewProps) {
                   <WeekTimeSlot
                     key={d.id}
                     deployment={d}
+                    color={effectiveColor(d, app.selectedTool)}
                     topPct={top}
                     heightPct={height}
                     onClick={onDeploymentClick}

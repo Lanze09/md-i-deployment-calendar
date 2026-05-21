@@ -4,14 +4,13 @@ import type {
   EnvironmentName,
   FilterState,
   RiskLevel,
-  TeamKey,
 } from '../types';
 
 const DEFAULT_FILTERS: FilterState = {
-  teams: [],
   environments: [],
   statuses: [],
   riskLevels: [],
+  enhancements: [],
   search: '',
 };
 
@@ -23,10 +22,10 @@ function readFromUrl(): FilterState {
     return v ? v.split(',').filter(Boolean) : [];
   };
   return {
-    teams: csv('teams') as TeamKey[],
     environments: csv('envs') as EnvironmentName[],
     statuses: csv('statuses') as DeploymentStatus[],
     riskLevels: csv('risks') as RiskLevel[],
+    enhancements: csv('enh'),
     search: params.get('q') ?? '',
   };
 }
@@ -37,10 +36,10 @@ function writeToUrl(filters: FilterState): void {
     if (list.length === 0) params.delete(key);
     else params.set(key, list.join(','));
   };
-  set('teams', filters.teams);
   set('envs', filters.environments);
   set('statuses', filters.statuses);
   set('risks', filters.riskLevels);
+  set('enh', filters.enhancements);
   if (filters.search) params.set('q', filters.search);
   else params.delete('q');
   const query = params.toString();

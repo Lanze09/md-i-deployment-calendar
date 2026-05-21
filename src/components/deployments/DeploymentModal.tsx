@@ -85,7 +85,7 @@ export function DeploymentModal() {
   }, [isDeploymentModalOpen, editingDeployment, selectedDate]);
 
   const frozen = deploymentIsFrozen(
-    { deploy_date: form.deploy_date, environment: form.environment },
+    { deploy_date: form.deploy_date, deploy_end_date: form.deploy_end_date, environment: form.environment },
     freezePeriods.freezePeriods,
   );
 
